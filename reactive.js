@@ -1,6 +1,6 @@
 class EventEmitter {
   constructor() {
-    this.listeners = {};
+    this.listeners = {}; 
   }
 
   on(event, fn) {
@@ -14,24 +14,17 @@ class EventEmitter {
   }
 
   emit(event, data) {
-    const eventListeners = this.listeners[event];
-
-    if (event === 'error' && (!eventListeners || eventListeners.length === 0)) {
-      console.error('Uncaught error event:', data);
-      return;
+    if (event === 'error' && !this.listeners['error']) {
+      throw data instanceof Error ? data : new Error(String(data));
     }
 
-    if (!eventListeners) return;
+    if (!this.listeners[event]) return;
 
-    eventListeners.forEach(fn => {
+    this.listeners[event].forEach(fn => {
       try {
         fn(data);
       } catch (err) {
-        if (event !== 'error') {
-          this.emit('error', err);
-        } else {
-          console.error('Error in error listener:', err);
-        }
+        this.emit('error', err);
       }
     });
   }
@@ -40,30 +33,48 @@ class EventEmitter {
 class Observable {
   constructor(emitter, event) {
     this.emitter = emitter;
-    this.event = event;
+    this.event   = event;
   }
 
   subscribe(fn) {
     this.emitter.on(this.event, fn);
-    return () => this.emitter.off(this.event, fn);
+    return () => this.emitter.off(this.event, fn); 
   }
 }
 
-
 const emitter = new EventEmitter();
+emitter.on('error', err => console.error(`[Error]   ${err.message}`));
 
-emitter.on('message', (data) => {
-  if (data === 'break') throw new Error('Error!');
-  console.log(`Logger 1: ${data}`);
-});
+const logger = data => console.log(`[Logger]  отримав: "${data}"`);
+const notifier = data => console.log(`[Notify]  сповіщення: "${data}"`);
+const broken = () => { throw new Error('listener впав!'); };
 
-emitter.on('message', (data) => {
-  console.log(`Logger 2: ${data}`);
-});
+emitter.on('message', logger);
+emitter.on('message', broken);  
+emitter.on('message', notifier);
 
-console.log('Attempt 1: ');
+console.log("Emit 1: broken don't stop notifier");
 emitter.emit('message', 'Привіт!');
 
-console.log('\nAttempt 2: ');
-emitter.emit('message', 'break'); 
+emitter.off('message', logger);
+emitter.off('message', broken);
 
+console.log("\n only notifier ");
+emitter.emit('message', 'Другий меседж');
+
+console.log("\n=== Observable + subscribe/unsubscribe ===");
+const obs         = new Observable(emitter, 'message');
+const unsubscribe = obs.subscribe(d => console.log(`[Obs]     отримав: "${d}"`));
+
+emitter.emit('message', 'Через observable');
+unsubscribe();
+emitter.emit('message', 'Після unsubscribe — не побачить');
+console.log("[Obs] більше не отримує повідомлень");
+
+console.log("\nError without listener");
+const bare = new EventEmitter();
+try {
+  bare.emit('error', new Error('необроблена помилка'));
+} catch (e) {
+  console.log(`[Caught]  ${e.message}`);
+}
